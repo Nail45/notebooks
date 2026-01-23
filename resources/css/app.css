@@ -1,0 +1,6 @@
+@import url(./pages/main/sidebar.css);
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
