@@ -87,14 +87,17 @@
     <!-- Заголовок фильтров -->
     <div class="flex items-center justify-between mb-6 pb-4 border-b border-gray-100 gap-4">
         <h2 class="text-lg font-bold text-gray-900">Фильтры</h2>
-        <button data-action="reset-filters"
+        <button
+            onclick="resetFilters()"
+            data-action="reset-filters"
                 class="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors">
             Сбросить все
         </button>
     </div>
 
     <!-- Контейнер для фильтров с прокруткой -->
-    <form name="filter" method="get" class="space-y-4 filter-name" id="filter-form" action="{{route('products.index')}}">
+    <form name="filter" method="get" class="space-y-4 filter-name" id="filter-form"
+          action="{{route('products.index')}}">
         <!-- Фильтр: Цена -->
         <div class="filter-group">
             <div class="filter-header" data-filter-target="price-filter" onclick="toggleFilter('price-filter')">
@@ -2415,17 +2418,16 @@
             </div>
         </div>
 
-        <!-- Кнопка применения фильтров -->
-        <div class="mt-6 pt-4 border-t border-gray-100">
-            <button
-                id="filter-submit"
-                type="submit"
-                class="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
-                Показать результаты
-            </button>
-        </div>
     </form>
-
+    <!-- Кнопка применения фильтров -->
+    <div class="mt-6 pt-4 border-t border-gray-100">
+        <button
+            id="filter-submit"
+            type="submit"
+            class="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+            Показать результаты
+        </button>
+    </div>
 </aside>
 <!-- Overlay для затемнения фона -->
 <div id="filters-overlay" class="fixed inset-0 bg-black bg-opacity-50 z-40 hidden"></div>
