@@ -158,7 +158,7 @@
                     <div class="flex items-center space-x-6">
 
                         <!-- Аккаунт -->
-                        <a href="{{route('dashboard')}}"
+                        <a href="{{route('profile.edit')}}"
                            class="flex flex-col items-center text-gray-700 cursor-pointer hover:text-pink-500">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"
                                  fill="currentColor">
