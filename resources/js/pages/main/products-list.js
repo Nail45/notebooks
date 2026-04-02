@@ -4,23 +4,48 @@ let cartState = {
   count: 0
 };
 
-// Инициализация при загрузке
-document.addEventListener('DOMContentLoaded', function () {
-  // Навешиваем обработчики на все кнопки
+// Флаг для отслеживания инициализации
+let isInitialized = false;
+
+// Инициализация кнопок корзины
+function initCartButtons() {
+  // Находим все кнопки
+  const buttons = document.querySelectorAll('[id^="cart-btn-"]');
+
+  buttons.forEach(button => {
+    // Удаляем все существующие обработчики через клонирование
+    const newButton = button.cloneNode(true);
+    button.parentNode.replaceChild(newButton, button);
+  });
+
+  // Навешиваем новые обработчики на свежие кнопки
   document.querySelectorAll('[id^="cart-btn-"]').forEach(button => {
     const notebookId = button.id.replace('cart-btn-', '');
+
     button.addEventListener('click', function (e) {
       e.preventDefault();
       e.stopPropagation();
-      addToCart(notebookId, button);
+      addToCart(notebookId, this);
     });
   });
+}
+
+// ЕДИНСТВЕННЫЙ обработчик загрузки страницы
+document.addEventListener('DOMContentLoaded', function () {
+  // Предотвращаем повторную инициализацию
+  if (isInitialized) {
+    return;
+  }
+
+  isInitialized = true;
+
+  // Инициализируем кнопки
+  initCartButtons();
 
   // Загружаем состояние корзины с сервера
   loadCartState().then(() => {
     // После загрузки состояния обновляем все кнопки
     updateAllCartButtons();
-
     // Обновляем счетчик
     updateCartCounter(cartState.count);
   });
@@ -38,11 +63,11 @@ async function loadCartState() {
     });
 
     if (response.ok) {
-      cartState = await response.json();
-      console.log('Загружено состояние корзины:', cartState);
+      const data = await response.json();
+      cartState = data;
     }
   } catch (error) {
-    console.error('Ошибка загрузки состояния корзины:', error);
+    // Тихая обработка ошибки
   }
 }
 
@@ -63,8 +88,6 @@ function updateAllCartButtons() {
 
 // Основная функция добавления в корзину
 function addToCart(notebookId, button) {
-  console.log('Добавляем товар ID:', notebookId);
-
   // Проверяем, не добавлен ли уже
   if (cartState.items && cartState.items[notebookId]) {
     showNotification('Товар уже в корзине', 'info');
@@ -79,14 +102,16 @@ function addToCart(notebookId, button) {
   button.innerHTML = 'Добавляем...';
   button.disabled = true;
 
+  let token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+
   // Подготавливаем данные
   const data = new FormData();
   data.append('notebook_id', notebookId);
   data.append('count', 1);
-  data.append('_token', '{{ csrf_token() }}');
+  data.append('_token', token);
 
   // Отправляем запрос
-  fetch('{{ route("basket.store") }}', {
+  fetch('/basket', {
     method: 'POST',
     body: data,
     headers: {
@@ -95,12 +120,9 @@ function addToCart(notebookId, button) {
     }
   })
     .then(response => {
-      console.log('Response status:', response.status);
       return response.json().then(data => ({status: response.status, data}));
     })
     .then(({status, data}) => {
-      console.log('Response data:', data);
-
       if (status === 200 && data.success) {
         // Успех - обновляем состояние
         updateButtonToInCart(button);
@@ -121,8 +143,6 @@ function addToCart(notebookId, button) {
       }
     })
     .catch(error => {
-      console.error('Error:', error);
-
       // Восстанавливаем кнопку
       button.innerHTML = originalHTML;
       button.className = originalClass;
@@ -136,11 +156,11 @@ function addToCart(notebookId, button) {
 // Функция для обновления кнопки в состояние "В корзине"
 function updateButtonToInCart(button) {
   button.innerHTML = `
-            <svg class="h-3.5 w-3.5 mr-1.5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-            </svg>
-            В корзине
-        `;
+    <svg class="h-3.5 w-3.5 mr-1.5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+    </svg>
+    В корзине
+  `;
   button.className = button.className
     .replace('from-purple-600 to-purple-700', 'from-green-600 to-green-700')
     .replace('hover:from-purple-700 hover:to-purple-800', 'hover:from-green-700 hover:to-green-800');
@@ -150,12 +170,12 @@ function updateButtonToInCart(button) {
 // Функция для сброса кнопки в исходное состояние
 function resetButtonToDefault(button) {
   button.innerHTML = `
-            <svg class="h-3.5 w-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
-            </svg>
-            В корзину
-        `;
+    <svg class="h-3.5 w-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+        d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
+    </svg>
+    В корзину
+  `;
   button.className = button.className
     .replace('from-green-600 to-green-700', 'from-purple-600 to-purple-700')
     .replace('hover:from-green-700 hover:to-green-800', 'hover:from-purple-700 hover:to-purple-800');
@@ -164,8 +184,6 @@ function resetButtonToDefault(button) {
 
 // Обновление счетчика в шапке
 function updateCartCounter(count) {
-  console.log('Обновляем счетчик на:', count);
-
   const counters = document.querySelectorAll('.cart-count, [class*="cart-count"], [id*="cart-badge"]');
 
   counters.forEach(counter => {
@@ -193,15 +211,15 @@ function showNotification(message, type = 'success') {
   const notification = document.createElement('div');
   notification.className = `fixed top-4 right-4 z-50 ${color.bg} ${color.border} ${color.text} px-4 py-3 rounded-lg shadow-lg`;
   notification.innerHTML = `
-            <div class="flex items-center">
-                <svg class="h-5 w-5 ${color.icon} mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    ${type === 'success' ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>' :
+    <div class="flex items-center">
+      <svg class="h-5 w-5 ${color.icon} mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        ${type === 'success' ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>' :
     type === 'error' ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>' :
       '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>'}
-                </svg>
-                <span>${message}</span>
-            </div>
-        `;
+      </svg>
+      <span>${message}</span>
+    </div>
+  `;
 
   document.body.appendChild(notification);
 
@@ -209,3 +227,6 @@ function showNotification(message, type = 'success') {
     notification.remove();
   }, 3000);
 }
+
+// Экспортируем функцию для возможного использования в других скриптах
+window.initCartButtons = initCartButtons;

@@ -3,17 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\NotebookFilterRequest;
-use App\Models\FeedBacks;
-use App\Models\Notebook;
 use App\Services\Filters\NotebookFilterService;
 use App\Services\Pagination\NotebookPaginator;
-use Illuminate\Contracts\View\Factory;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
-use mysql_xdevapi\Exception;
+use App\Models\Notebook;
 
-class NotebookController extends Controller
+class NotebookSearchController extends Controller
 {
   private NotebookFilterService $filterService;
   private NotebookPaginator $paginator;
@@ -24,17 +21,83 @@ class NotebookController extends Controller
     $this->paginator = $paginator;
   }
 
-  public function index(NotebookFilterRequest $request): View|JsonResponse
+  /**
+   * Поиск ноутбуков по названию (AJAX для живого поиска)
+   */
+  public function search(Request $request): JsonResponse
+  {
+    $query = $request->get('q', '');
+
+    if (empty($query) || strlen($query) < 2) {
+      return response()->json([
+        'success' => false,
+        'message' => 'Минимум 2 символа',
+        'results' => [],
+        'html' => view('main.search-results', [
+          'notebooks' => [],
+          'query' => $query
+        ])->render()
+      ]);
+    }
+
+    $notebooks = Notebook::where('title', 'LIKE', "%{$query}%")
+      ->orWhere('line', 'LIKE', "%{$query}%")
+      ->orWhere('manufacturer', 'LIKE', "%{$query}%")
+      ->select('id', 'title', 'line', 'manufacturer', 'price', 'slug')
+      ->limit(10)
+      ->get();
+
+    $formattedResults = $notebooks->map(function ($notebook) {
+      return [
+        'id' => $notebook->id,
+        'title' => $notebook->title,
+        'slug' => $notebook->slug,
+        'line' => $notebook->line,
+        'manufacturer' => $notebook->manufacturer,
+        'price' => number_format($notebook->price, 0, '.', ' '),
+      ];
+    });
+
+    return response()->json([
+      'success' => true,
+      'count' => $formattedResults->count(),
+      'results' => $formattedResults,
+      'html' => view('main.search-results', [
+        'notebooks' => $formattedResults,
+        'query' => $query
+      ])->render()
+    ]);
+  }
+
+  /**
+   * Результаты поиска с сортировкой и фильтрацией
+   */
+  public function index(NotebookFilterRequest $request, ?string $line = null): View|JsonResponse
   {
     try {
       // Получаем параметры
       $sort = $request->get('sort', 'default');
       $manufacturer = $request->get('manufacturer', 'all');
+      $searchQuery = $request->get('q', '');
 
-      // Построение запроса
+      // Построение базового запроса
       $query = $this->filterService->buildBaseQuery($manufacturer);
 
-      // Применение фильтров
+      // Применяем поиск по тексту
+      if (!empty($searchQuery) && strlen($searchQuery) >= 2) {
+        $query->where(function($q) use ($searchQuery) {
+          $q->where('title', 'LIKE', "%{$searchQuery}%")
+            ->orWhere('line', 'LIKE', "%{$searchQuery}%")
+            ->orWhere('manufacturer', 'LIKE', "%{$searchQuery}%");
+        });
+      }
+
+      // Фильтр по линейке (из URL)
+      if ($line) {
+        $query->where('line', 'LIKE', "%{$line}%");
+      }
+
+      // Применение всех остальных фильтров
       $this->filterService->applyFilters($query, $request);
 
       // Применение сортировки
@@ -46,15 +109,26 @@ class NotebookController extends Controller
       // Активные фильтры
       $activeFilters = $this->filterService->getActiveFilters($request);
 
+      // Добавляем поисковый запрос в активные фильтры для отображения
+      if (!empty($searchQuery)) {
+        $activeFilters['q'] = $searchQuery;
+      }
+      if ($line) {
+        $activeFilters['line'] = $line;
+      }
+
       // Ответ в зависимости от типа запроса
-      return $this->buildResponse($result, $activeFilters, $request, $manufacturer, $sort);
+      return $this->buildResponse($result, $activeFilters, $request, $manufacturer, $sort, $searchQuery, $line);
 
     } catch (\Exception $e) {
       return $this->handleError($e, $request);
     }
   }
 
-  private function buildResponse(array $result, array $activeFilters, NotebookFilterRequest $request, string $manufacturer, string $sort): Factory|View|JsonResponse
+  /**
+   * Построение ответа (копия из NotebookController)
+   */
+  private function buildResponse(array $result, array $activeFilters, NotebookFilterRequest $request, string $manufacturer, string $sort, string $searchQuery = '', ?string $line = null): View|JsonResponse
   {
     $isAjaxRequest = $request->ajax() || $request->wantsJson() || $request->hasHeader('X-Requested-With');
 
@@ -92,13 +166,14 @@ class NotebookController extends Controller
         'per_page' => $this->paginator->perPage,
         'from' => $result['from'],
         'to' => $result['to'],
+        'search_query' => $searchQuery,
       ], 200, [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 
     // Обычный запрос
     $definitions = $this->filterService->getDefinitions();
 
-    return view('main.layout', array_merge([
+    return view('search.results', array_merge([
       'notebooks' => $result['notebooks'],
       'paginator' => $result['paginator'],
       'sort' => $sort,
@@ -106,10 +181,15 @@ class NotebookController extends Controller
       'currentPage' => $result['currentPage'],
       'totalPages' => $result['totalPages'],
       'activeFilters' => $activeFilters,
-      'filterCount' => count($activeFilters)
+      'filterCount' => count($activeFilters),
+      'searchQuery' => $searchQuery,
+      'line' => $line
     ], $definitions));
   }
 
+  /**
+   * Обработка ошибок (копия из NotebookController)
+   */
   private function handleError(\Exception $e, NotebookFilterRequest $request): JsonResponse
   {
     $isAjaxRequest = $request->ajax() || $request->wantsJson() || $request->hasHeader('X-Requested-With');
@@ -123,57 +203,5 @@ class NotebookController extends Controller
     }
 
     throw $e;
-  }
-
-  public function show(string $products): Factory|\Illuminate\Contracts\View\View
-  {
-    $notebook = Notebook::query()->where('slug', '=', $products)->first();
-
-    $feedbacks = $notebook->feedbacks()
-      ->orderBy('date', 'desc')
-      ->paginate(10);
-
-
-    return view('product.index', compact('notebook', 'feedbacks'));
-  }
-
-  public function addFeedbacks(Request $request)
-  {
-
-    try {
-      // Валидация
-      $validated = $request->validate([
-        'rating' => 'required|integer|min:1|max:5',
-        'notebook_id' => 'required|exists:notebooks,id',
-        'advantage' => 'nullable|string|max:1000',
-        'disadvantages' => 'nullable|string|max:1000',
-        'summary' => 'nullable|string|max:2000',
-      ]);
-      // Проверка, не оставлял ли пользователь уже отзыв
-      $existingFeedback = FeedBacks::where('user_id', auth()->id())
-        ->where('notebook_id', $validated['notebook_id'])
-        ->exists();
-
-      if ($existingFeedback) {
-        return redirect()->back()->with('error', 'Вы уже оставляли отзыв на этот товар');
-      }
-
-      // Создание отзыва
-      feedBacks::query()->create([
-        'rating' => $validated['rating'],
-        'user_id' => auth()->id(),
-        'notebook_id' => $validated['notebook_id'],
-        'advantage' => $validated['advantage'] ?? null,
-        'disadvantages' => $validated['disadvantages'] ?? null,
-        'summary' => $validated['summary'] ?? null,
-      ]);
-
-      return redirect()->back()->with('success', 'Спасибо за ваш отзыв!');
-
-    } catch (\Illuminate\Validation\ValidationException $e) {
-      return redirect()->back()->withErrors($e->validator)->withInput();
-    } catch (\Exception $e) {
-      return redirect()->back()->with('error', 'Ошибка при сохранении отзыва. Пожалуйста, попробуйте позже.');
-    }
   }
 }

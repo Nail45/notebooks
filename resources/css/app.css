@@ -1,4 +1,5 @@
 @import url(./pages/main/sidebar.css);
+@import url(./pages/product/product.css);
 
 @tailwind base;
 @tailwind components;
